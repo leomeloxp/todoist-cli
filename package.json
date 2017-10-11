@@ -1,13 +1,14 @@
 {
   "name": "todoist-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A CLI interface to Todoist built with Javascript",
   "main": "./src/index.js",
   "bin": {
     "todoist": "./src/index.js"
   },
   "scripts": {
-    "postinstall": "echo \"Installed successfully, add your API token to TODOIST_TOKEN. eg `export TODOIST_TOKEN=MY_API_TOKEN;`\""
+    "postinstall":
+      "echo \"Installed successfully, add your API token to TODOIST_TOKEN. eg `export TODOIST_TOKEN=MY_API_TOKEN;`\""
   },
   "repository": "git@github.com:leomeloxp/todoist-cli.git",
   "author": "Leonardo Melo <hello@leomeloxp.net>",
