@@ -53,7 +53,7 @@ const createTask = (task = {}) => {
     }
   })
     .then(({ data }) => {
-      if (data.sync_status[commandUUID] === 'oka') {
+      if (data.sync_status[commandUUID] === 'ok') {
         spinner.succeed('Task added!');
         process.exit(0);
       } else {
