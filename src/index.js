@@ -34,8 +34,11 @@ if (!token) {
  */
 const api = axios.create({
   baseURL: 'https://beta.todoist.com/API/v8/',
-  timeout: 1000,
-  headers: { 'Authorization': 'Bearer ' + token, 'X-Request-Id': uuid(), 'Content-Type': 'application/json' },
+  timeout: 15000,
+  headers: {
+    'Authorization': 'Bearer ' + token, 'X-Request-Id': uuid(),
+    'Content-Type': 'application/json'
+  },
   responseType: 'json'
 
 });
@@ -52,6 +55,25 @@ async function listProjects() {
   });
 }
 
+async function deleteItems(opts) {
+  const spinner = ora('Fetching task IDs').start();
+  try {
+    let data = await getItems(opts, spinner);
+    spinner.info(`${data.length} tasks(s) to delete`);
+    for (const task of data) {
+      try {
+        await api.delete('tasks/' + task.id);
+        spinner.info(`Deleted ${task.id}.`);
+      } catch (e1) {
+        spinner.warn(`Could not delete ${task.id}: ${e1}`);
+      }
+      break;
+    }
+  } catch (e) {
+    spinner.fail(`${e}`);
+  }
+}
+
 async function resolveProject(projectName) {
   const projects = await getProjects();
   const project = projects.find(p => p.name.localeCompare(projectName, undefined, { sensitivity: 'base' }) == 0);
@@ -59,30 +81,37 @@ async function resolveProject(projectName) {
   return project.id;
 }
 
-async function listItems({ projectName }) {
-  const spinner = ora('Fetching tasks').start();
+async function getItems({ projectName }, spinner) {
+  if (typeof spinner === 'undefined') spinner = ora('Fetching tasks').start();
 
-  try {
-    let { data } = await api.get('tasks');
-    spinner.succeed('Fetched!');
-
-    if (projectName) {
-      spinner.text = `Resolving project '${projectName}'`;
-      const projectId = await resolveProject(projectName);
-      if (projectId == 0) {
-        spinner.fail(`Project '${projectName}' not found.`);
-        return;
-      } else {
-        spinner.text = 'Filtering by project';
-        data = data.filter(p => (p.project_id == projectId));
-      }
+  let { data } = await api.get('tasks');
+  spinner.succeed('Fetched!');
+  if (projectName) {
+    spinner.text = `Resolving project '${projectName}'`;
+    const projectId = await resolveProject(projectName);
+    if (projectId == 0) {
+      spinner.fail(`Project '${projectName}' not found.`);
+      return [];
+    } else {
+      spinner.text = 'Filtering by project';
+      data = data.filter(p => (p.project_id == projectId));
     }
-    data.forEach(task => {
+  }
+  return data;
+
+}
+
+async function listItems(opts) {
+  const spinner = ora('Fetching tasks').start();
+  try {
+    let data = await getItems(opts, spinner);
+    for (const task of data) {
       console.log(task.content);
-    });
+    }
   } catch (e) {
     spinner.fail(`${e}`);
   }
+
 }
 
 async function addTask(task, opts) {
@@ -113,9 +142,8 @@ async function addTask(task, opts) {
     // }
     // console.log(task);
     return;
-
   }
-
+  process.exit();
 }
 
 /**
@@ -135,6 +163,9 @@ switch (true) {
   case Boolean(argv['list'] || argv['l']):
     listItems(opts);
     break;
+  case Boolean(argv['deleteAll']):
+    deleteItems(opts);
+    break;
   case Boolean(argv['add']):
     let task = {};
     if (Boolean(argv['d]'] || argv['due'])) {
@@ -151,6 +182,7 @@ switch (true) {
     --add     -a    Add a task
     --list    -l    List tasks
     --projects      List projects
+    --deleteAll     Delete all tasks (or all tasks in specified project)
 
   options:
     --due     -d    A date string, eg. tomorrow, 'every day @ 10'
