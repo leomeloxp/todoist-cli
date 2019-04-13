@@ -1,27 +1,26 @@
 {
   "name": "todoist-cli",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A CLI interface to Todoist built with Javascript",
   "main": "./src/index.js",
   "bin": {
-    "todoist": "./src/index.js"
+    "todoist-cli": "./src/index.js"
   },
   "scripts": {
-    "postinstall":
-      "echo \"Installed successfully, add your API token to TODOIST_TOKEN. eg `export TODOIST_TOKEN=MY_API_TOKEN;`\""
+    "postinstall": "echo \"Installed successfully, add your API token to TODOIST_TOKEN. eg `export TODOIST_TOKEN=MY_API_TOKEN;`\""
   },
   "repository": "git@github.com:leomeloxp/todoist-cli.git",
   "author": "Leonardo Melo <hello@leomeloxp.net>",
   "license": "MIT",
   "dependencies": {
-    "axios": "^0.16.2",
+    "axios": "^0.18.0",
+    "babel-eslint": "^10.0.1",
     "chalk": "^2.1.0",
     "minimist": "^1.2.0",
     "ora": "^1.3.0",
-    "uuid": "^3.1.0"
+    "uuid": "^3.3.2"
   },
   "devDependencies": {
-    "eslint": "^4.8.0",
-    "eslint-plugin-react": "^7.4.0"
+    "eslint": "^4.8.0"
   }
 }

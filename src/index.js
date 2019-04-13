@@ -3,11 +3,11 @@
 /**
  * Import third party packages
  */
-const fetch = require('axios');
+const axios = require('axios');
 const chalk = require('chalk');
 const minimist = require('minimist');
 const ora = require('ora');
-const uuid = require('uuid');
+const uuid = require('uuid/v4');
 
 /**
  * App has started, notify the user
@@ -19,84 +19,179 @@ console.log(chalk.red('Todoist CLI'));
  */
 const token = process.env.TODOIST_TOKEN;
 if (!token) {
-  console.log(chalk.red.bold('NO API TOKEN FOUND.'));
+  console.log(chalk.red.bold('API token not set.'));
   console.log(
     'Please add a valid token to your environment as `TODOIST_TOKEN`, eg. by running `export TODOIST_TOKEN="MY_API_TOKEN"`.'
   );
   console.log(
-    'You can find your token at: https://todoist.com/Users/viewPrefs?page=authorizations.'
+    'You can find your token at: https://todoist.com/prefs/integrations.'
   );
   process.exit(1);
 }
 
-const createTask = (task = {}) => {
+/**
+ * Set up HTTP client
+ */
+const api = axios.create({
+  baseURL: 'https://beta.todoist.com/API/v8/',
+  timeout: 15000,
+  headers: {
+    'Authorization': 'Bearer ' + token, 'X-Request-Id': uuid(),
+    'Content-Type': 'application/json'
+  },
+  responseType: 'json'
+
+});
+
+async function getProjects() {
+  const { data } = await api.get('projects');
+  return data;
+}
+
+async function listProjects() {
+  let projects = await getProjects();
+  projects.forEach(project => {
+    console.log(project.name);
+  });
+}
+
+async function deleteItems(opts) {
+  const spinner = ora('Fetching task IDs').start();
+  try {
+    let data = await getItems(opts, spinner);
+    spinner.info(`${data.length} tasks(s) to delete`);
+    for (const task of data) {
+      try {
+        await api.delete('tasks/' + task.id);
+        spinner.info(`Deleted ${task.id}.`);
+      } catch (e1) {
+        spinner.warn(`Could not delete ${task.id}: ${e1}`);
+      }
+      break;
+    }
+  } catch (e) {
+    spinner.fail(`${e}`);
+  }
+}
+
+async function resolveProject(projectName) {
+  const projects = await getProjects();
+  const project = projects.find(p => p.name.localeCompare(projectName, undefined, { sensitivity: 'base' }) == 0);
+  if (project == null) return 0;
+  return project.id;
+}
+
+async function getItems({ projectName }, spinner) {
+  if (typeof spinner === 'undefined') spinner = ora('Fetching tasks').start();
+
+  let { data } = await api.get('tasks');
+  spinner.succeed('Fetched!');
+  if (projectName) {
+    spinner.text = `Resolving project '${projectName}'`;
+    const projectId = await resolveProject(projectName);
+    if (projectId == 0) {
+      spinner.fail(`Project '${projectName}' not found.`);
+      return [];
+    } else {
+      spinner.text = 'Filtering by project';
+      data = data.filter(p => (p.project_id == projectId));
+    }
+  }
+  return data;
+
+}
+
+async function listItems(opts) {
+  const spinner = ora('Fetching tasks').start();
+  try {
+    let data = await getItems(opts, spinner);
+    for (const task of data) {
+      console.log(task.content);
+    }
+  } catch (e) {
+    spinner.fail(`${e}`);
+  }
+
+}
+
+async function addTask(task, opts) {
   const spinner = ora('Creating task').start();
 
-  /**
-   * Prepare task creation payload
-   */
-  const commandUUID = uuid();
-  const temp_id = uuid();
-  let data = [];
-  data.push({
-    type: 'item_add',
-    temp_id,
-    uuid: commandUUID,
-    args: task
-  });
-
-  fetch('https://todoist.com/api/v7/sync', {
-    method: 'POST',
-    data: {
-      token,
-      commands: data
+  // Add project id if specified
+  if (opts.projectName) {
+    spinner.text = `Resolving ${opts.projectName}`;
+    let projectId = await resolveProject(opts.projectName);
+    if (projectId == 0) {
+      spinner.fail(`Project '${opts.projectName}' not found.`);
+      return;
     }
-  })
-    .then(({ data }) => {
-      if (data.sync_status[commandUUID] === 'ok') {
-        spinner.succeed('Task added!');
-        process.exit(0);
-      } else {
-        spinner.fail(
-          `Something went wrong, sync status: ${data.sync_status[commandUUID]}`
-        );
-        process.exit(1);
-      }
-    })
-    .catch(e => {
-      spinner.fail(`${e}`);
-      process.exit(1);
-    });
-};
+    spinner.text = 'Resolved project';
+    task.project_id = projectId;
+  }
+
+  // Post task
+  spinner.text = 'Posting task';
+  try {
+    let { data } = await api.post('tasks', task);
+    spinner.succeed('Posted!');
+  } catch (e) {
+    spinner.fail(`${e}`);
+    // if (e.response) {
+    //   console.log(e.response.data);
+    //   console.log(e.response.headers);
+    // }
+    // console.log(task);
+    return;
+  }
+  process.exit();
+}
 
 /**
  * The user should now be able to choose what they would like to do. 
  * Let's ensure that we've got a valid set or arguments being passed and guide the user accordingly.
  */
 const argv = minimist(process.argv.slice(2));
-const notEnoughArgs = Boolean(argv['_'].length === 0);
-let task = {};
+
+let opts = {
+  projectName: argv['project'] || argv['p']
+}
+
 switch (true) {
-  case argv['h'] || argv['help'] || notEnoughArgs:
-    const helpText = `
-    Allows for addings tasks to your inbox on Todoist. Requires an API token to be set
-    on your environment as TODOIST_TOKEN.
-
-    usage: todoist [-d | --due <date_string>] <task_content>
-    
-    options:
-      --due    -d    A date string, eg. tomorrow, 'every day @ 10'
-
-    example:
-      todoist -d sunday "Walk the dog"
-    `;
-    console.log(helpText);
+  case Boolean(argv['projects']):
+    listProjects();
     break;
-  case Boolean(argv['d'] || argv['due']):
-    task['date_string'] = argv['d'] || argv['due'];
-  // Fall through to allow for adding content
+  case Boolean(argv['list'] || argv['l']):
+    listItems(opts);
+    break;
+  case Boolean(argv['deleteAll']):
+    deleteItems(opts);
+    break;
+  case Boolean(argv['add']):
+    let task = {};
+    if (Boolean(argv['d]'] || argv['due'])) {
+      task['due_string'] = argv['d'] || argv['due'];
+    }
+    task['content'] = argv['add'];
+    addTask(task, opts);
+    break;
   default:
-    task['content'] = argv['_'].join(' ');
-    createTask(task);
-    break;
+    const helpText = `
+  Allows for adding and listing tasks from Todoist.
+  
+  commands:
+    --add     -a    Add a task
+    --list    -l    List tasks
+    --projects      List projects
+    --deleteAll     Delete all tasks (or all tasks in specified project)
+
+  options:
+    --due     -d    A date string, eg. tomorrow, 'every day @ 10'
+    --project -p    Filters task list, or sets project when adding a new task
+
+  example:
+    todoist-cli --due sunday --add "Walk the dog"
+    todoist-cli --list --project "Shopping"
+  `;
+    console.log(helpText);
+
 }
